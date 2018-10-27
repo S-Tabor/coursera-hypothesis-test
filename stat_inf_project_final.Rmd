@@ -1,0 +1,404 @@
+---
+title: "Statistical inference with the GSS data"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+```
+
+### Load data
+
+
+
+```{r load-data}
+load("gss.Rdata")
+```
+
+
+
+* * *
+## Part 1: Data
+
+The GSS collects data by randomly selecting respondents in households across the United States. Therefore, any inferences that can be made using this data can only be applied to the population of the US. Since random sampling has been used, but no random assignment, this means it is possible to make generalisations, but no statements about causation, from this data. 
+
+There are numerous sources of bias that could be included in the data, these are:
+
+* **Volunteer bias**
+
+    Respondents must volunteer to be included in the study. Therefore, the study may not include some important characteristics linked with people who are unwilling to volunteer, which could lead to bias in the data. 
+    
+* **Non-response bias**
+
+    As the response rate of the GSS surveys is consistently reported above 70%, this source of bias is likely to be smaller than other sources. However, this may still introduce bias to the data due as this missing data could represent another aspect of the population as a whole that is being missed by the sample (survey).
+    
+* **Convenience bias**
+
+    As respondents are chosen by targeting households, any (most likely small) proportion of the population that do not have a permanent residence (i.e. one that would be included in the survey), would not be picked up in this sample of the population and therefore introduce bias into the data. The survey also only includes respondents ages 18 and above. This could be another form of convenience bias - missing information about the proportion of the population aged under 18. 
+
+
+
+
+* * *
+## Part 2: Research question
+
+**Q: Is there an association between gun ownership and a respondents level of income?**
+
+This research question will involve investigating two variables: the income of respondents, denoted by "coninc", and gun ownership, denoted by "owngun".
+
+As gun crime is a massive problem in the US, resulting in numerous, tragic, mass shootings and deaths each year, any information gathered around this topic could potentially be useful for any efforts in preventing gun related crimes. Either possibility of finding, or not finding, an association between income and gun ownership could be insightful; for example, a negative result could possibly indicate that the prices of guns are not high enough to prevent people purchasing them no matter what income they are on. It is important to remember, however, that it is only possible to make generalisations about the population from this result, no causal relationships can be established as this is only an observational study.
+
+
+
+* * *
+## Part 3: Exploratory data analysis
+
+
+During this EDA phase, the two variables "coninc" and "owngun" will be investigated and prepared/cleaned to be used in a statistical test. The first step is to check what type of variables these are:
+
+```{r}
+str(gss$coninc)
+```
+
+```{r}
+str(gss$owngun)
+```
+
+  
+Therefore, we can see "coninc" (respondent's income), is a numerical variable with integer values. The "owngun" variable is categorical with three levels: "Yes", "No", and "Refused". Some summary statistics and details of these variables can be found by executing the following:
+
+
+```{r}
+gss %>%
+  select(owngun, coninc) %>%
+  summary()
+
+```
+
+From this summary, there are multiple points of interest; both variables have a significant amount of NA entries which should be filtered out in any following analysis. The minimum and maximum values of "coninc" are a large distance away from the mean value of \$44,503. Another noticeable point is the large difference in the mean and median of "coninc", which indicates that right skew could be present in this data. A check for skew can be carried out by looking at a histogram of "coninc" (filtering out NA values):
+
+
+```{r}
+gss %>%
+  select(owngun, coninc) %>%
+  filter(!is.na(owngun), !is.na(coninc)) %>%
+  ggplot() +
+  geom_histogram(aes(x= coninc), 
+                 binwidth = 2500, 
+                 color = "gray", 
+                 fill = "darkblue") +
+  labs(x = "Income ($)", 
+       y = "No. of People", 
+       title = "Histogram of Sample Income") + 
+  theme_minimal()
+```
+
+As suspected, a strong level of right skew is present in the sample. This will determine what type of statistical tests can be used with this sample, which will be discussed in the following section.
+
+
+Next, an inspection of the "owngun" variable can be carried out (again filtering out NA entries):
+
+```{r}
+gss %>%
+  select(owngun, coninc) %>%
+  filter(!is.na(owngun), !is.na(coninc)) %>%
+  ggplot() +
+  geom_bar(aes(x= owngun, fill = owngun), position = "stack") +
+  labs(x = "Owns A Gun?", 
+       y = "No. of People", 
+       title = "Gun Ownership") +
+  guides(fill = "none") +
+  theme_minimal()
+```
+
+```{r}
+
+# Proportions of gun owners
+gss %>%
+  select(owngun) %>%
+  filter(!is.na(owngun)) %>%
+  table() %>%
+  prop.table()
+
+
+```
+
+Therefore, it can be seen that the majority of this sample do not own a gun and the proportion of respondents who refused it answer is small (< 1 \%). As the number of respondents who refused to answer is not of importance with regard to the research question, this small proportion of people will be excluded in the rest of the analysis.
+
+
+As a quick, initial, check for comparing gun ownership with income, the income variable "coninc" can be split into two groups: above mean and below mean income.
+
+```{r}
+gss <- gss %>% 
+  mutate(wealthy_yn = ifelse(!is.na(coninc), 
+                             ifelse(coninc > mean(coninc, na.rm = T),
+                                    "yes", "no"), 
+                             NA))
+```
+
+We can then compare the proportions of gun owners for each income group:
+
+```{r}
+gss %>%
+  select(owngun, wealthy_yn) %>%
+  filter(!is.na(owngun), !is.na(wealthy_yn), owngun != "Refused") %>%
+  ggplot() +
+  geom_bar(aes(x= owngun, fill = wealthy_yn), position = "fill") +
+  labs(x = "Owns A Gun?", 
+       y = "Percentage of People", 
+       title = "Proportion of Gun Ownership by Income Group") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_discrete(name = "Earns Above Mean Sample Income?") +
+  theme_minimal()
+```
+
+
+
+```{r}
+
+gss %>%
+  select(owngun, wealthy_yn) %>%
+  filter(!is.na(owngun), wealthy_yn == "yes") %>%
+  table() %>%
+  prop.table()
+
+```
+
+```{r}
+
+gss %>%
+  select(owngun, wealthy_yn) %>%
+  filter(!is.na(owngun), wealthy_yn == "no") %>%
+  table() %>%
+  prop.table()
+
+```
+
+
+Therefore, as seen from the bar plot and following tables, the proportion of people who own a gun in this sample is higher for those earning above the sample mean than compared to those earning below. It therefore makes sense to split the income variable into two groups: income for people who own a gun and the income of those that do not own a gun. The summary statistics of the two groups can be found by carrying out the following:
+
+
+```{r}
+
+# Summary statistics for respondents who own a gun
+gss %>%
+  select(owngun, coninc) %>%
+  filter(!is.na(owngun), !is.na(coninc), owngun == "Yes") %>%
+  summarise(mean_wage_wgun = mean(coninc), 
+            sd_wage_wgun = sd(coninc), 
+            n_wgun = n()) 
+  
+  
+```
+
+```{r}
+
+# Summary statistics for respondents who do not own a gun
+gss %>%
+  select(owngun, coninc) %>%
+  filter(!is.na(owngun), !is.na(coninc), owngun == "No") %>%
+  summarise(mean_wage_nogun = mean(coninc), 
+            sd_wage_nogun = sd(coninc), 
+            n_nogun = n())
+```
+
+From these summary statistics it's possible to see that there is almost a \$10,000 difference in the means of these two groups. To determine if this is a significant difference, a statistical test must be carried out which will be addressed in the following section.
+
+
+Similar to the the income variable, the "owngun" variable can be altered by removing the "Refused" level of the variable so that it only represents groups "Yes" and "No" with regard to gun ownership:
+
+```{r}
+gss <- gss %>%
+  mutate(owngun_yn = as.factor(ifelse(owngun == "Yes", "Yes", 
+                                      ifelse(owngun == "No", "No", NA))))
+```
+
+```{r}
+summary(gss$owngun_yn)
+```
+
+As a final part of EDA, a box plot investigating the differences in income (for all three levels of "owngun") is generated:
+```{r}
+gss %>%
+  select(owngun, coninc) %>%
+  filter(!is.na(owngun), !is.na(coninc), owngun != "Refuse") %>%
+  ggplot() +
+  geom_boxplot(aes(x = owngun, y = coninc, fill = owngun)) +
+  labs(x = "Owns A Gun?", 
+       y = "Income ($)", 
+       title = "Boxplot Representation of Gun Ownership Vs Income") +
+  guides(fill = "none") +
+  theme_minimal()
+
+```
+
+
+
+* * *
+## Part 4: Inference
+
+### Hypothesis
+
+* **Null hypothesis:** $\mu_{gun} - \mu_{no gun} = 0$
+
+From this GSS study we can draw two samples: gun owners and non gun owners. Therefore, the null hypothesis, given by the above equation, states that there is no difference between the mean income of gun owners and non gun owners.
+
+* **Alternative hypothesis:** $\mu_{gun} - \mu_{no gun} \neq 0$ 
+
+As we are interested in a significant result in either direction, the alternative hypothesis states that income is not independent of gun ownership, and that the mean income of gun owners and non gun owners is not equal.
+
+
+
+
+### Checking conditions:
+
+The statistical test that will be used to find if there is a significant difference between the sample means is a two-sided t-test, the specifics of which will be discussed in the following section. The conditions for such a test to be valid are as follows:
+
+* **Independence**
+    * Within groups: As random sampling is used, and the sample size is **smaller than 10% of the population** (in this case the population of the US), it is reasonable to assume there is independence **within** the groups.
+    * Between groups: It is also a fair assumption that, since the data is sampled randomly and the gun ownership of one respondent will (most likely) not affect the income of another, there is independence **between** groups. 
+  
+* **Sample size and skew**
+    * For this condition it is important to view the histograms of each group separately:
+
+
+```{r}
+gss %>% 
+  select(owngun, coninc) %>%
+  filter(!is.na(coninc), owngun == "Yes")  %>%
+  ggplot() + 
+  geom_histogram(aes(x = coninc), 
+                 binwidth =5000, 
+                 fill = "darkblue", 
+                 color = "gray") +
+  labs(x = "Income ($)", 
+       y = "No. of People", 
+       title = "Histogram of Sample Income for Gun Owning Respondnents") +
+  theme_minimal()
+  
+
+```
+
+
+```{r}
+
+gss %>% 
+  select(owngun, coninc) %>%
+  filter(!is.na(coninc), owngun == "No")  %>%
+  ggplot() + 
+  geom_histogram(aes(x = coninc), 
+                 binwidth =5000, 
+                 fill = "darkblue", 
+                 color = "gray") +
+  labs(x = "Income ($)", 
+       y = "No. of People", 
+       title = "Histogram of Sample Income for Non Gun Owning Respondnents") +
+  theme_minimal()
+
+```
+
+
+
+From these histograms, it can be seen that the sample distributions contain a moderate to strong level of right skew. However, as the sample size >> 30 (12,860 and 18,018 for gun owning and non gun owning respondents respectively), we can assume that applying the central limit theorem is a valid approach (i.e. building a sampling distribution from the two groups would yield a normal distribution with mean at the true population mean). Therefore, all the conditions are met for carrying out a two-sided t-test.
+
+
+
+
+
+
+
+### Method 
+
+
+As the standard deviations for the group populations are unknown, this means a two-sided t-test is appropriate for this test (i.e. instead of using the Z-distribution). For this statistical test, a significance (and confidence) level of 95% will be used since this is a common metric. The t-score for a two-sided t-test can be calculated as follows:
+
+**$t\text{-}score = \frac{(\bar x_{1} - \bar x_{2} ) - (\mu_{1} - \mu_{2})}{\sqrt{\frac{s^{2}_{1}}{n_{1}} + \frac{s^{2}_{2}}{n_{2}}}}$**
+
+For this test, the null hypothesis assumes equal means, therefore the difference in population means in the above equation is replaced by:
+
+**$\mu_{1} - \mu_{2} = 0$**
+
+After calculating the t-score, it is then possible to derive the p-value by calculating the degrees of freedom (df) from the samples under test, given by: 
+
+**$df = min(n_{1} -1, n_{2} -1)$**
+
+However, this equation assumes equal variances for the two samples. As this assumption is not obvious in this case, it is assumed that there could be unequal variances in income for gun owners and non gun owners. In this case, a Welch's two sided t-test is employed. This follows the same procedure as above with the exception of a different calculation for the degree of freedom; this is calculated using the [Welch-Satterthwaite equation](https://en.wikipedia.org/wiki/Welch%27s_t-test) instead.
+
+Since the t-distribution only has one parameter, that being the degree of freedom, it is now possible to calculate the p-value. This can be carried out in R by using **pt(t-score, (df = No. for df), lower.tail = FALSE)x2**.
+
+
+
+
+
+### Inference
+
+
+Therefore, the following R function carries out a two-sided Welch's t-test using the above equation for calculating the t-score:
+
+
+```{r}
+t.test(data = gss, coninc ~ owngun_yn, var.equal = F, mu = 0, 
+       alternative = "two.sided", paired = F, conf.level = 0.95)
+```
+
+Calculating the p-value from the t-score of 22.491 gives:
+
+```{r}
+pt(22.491, df = 27998, lower.tail = F) * 2
+
+```
+
+This results in a p-value << 5%, i.e. much lower than the stated significance level. This means that it is possible to reject the null hypothesis in this case, meaning that for the US population, we can be 95% certain that there is a significant difference between the income of gun owners and non gun owners. 
+
+The above method also provides a 95% confidence interval; this states that we can be 95% confident that, on average, non gun owners have an income which is \$9839.81 to \$8262.22 **lower** compared to that of gun owners. This agrees with the previous hypothesis test, which had a null value of 0 and was rejected, meaning we would not expect for the value 0 to fall within the confidence interval which is what can be seen. 
+
+
+
+
+
+
+
+
+
+
+
+
+### Results
+
+
+As the null hypothesis was rejected, it can be concluded that there is an association between income and gun ownership for the US population. This could have many interesting implications, for example, does a lower income mean US citizens cannot afford to buy guns? Or do people with higher incomes feel the need for more protection to protect valuable assets they may have? The calculated CI also indicates that the average income of gun owners is higher than that of non gun owners. One interesting observation is that, from the box plot at the end of the EDA section, those who refused to answer have a much similar income level to gun owners compared to non gun owners. Therefore, it is possible to say that, in general, people with incomes at that level are more likely to own a gun. As this response has a smaller sample size, however, it is probably wise to advise caution with this statement.
+
+It is also worth noting that the strong right skew that was noted in the sample distributions may increase the type 1 error. One way to check this would be to carry out a simulation based test using different sample sizes to confirm that the sample sizes used are indeed large enough for the central limit theorem to be valid (as in [this](https://stats.stackexchange.com/questions/69898/t-test-on-highly-skewed-data) post on StackExchange).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
